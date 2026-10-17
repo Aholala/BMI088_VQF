@@ -8,7 +8,10 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "All_define.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef float vqf_real_t;
 typedef double vqf_double_t;
@@ -58,6 +61,8 @@ struct VQF_FILTER_t {
     vqf_real_t biasP[9];
     vqf_double_t motionBiasEstRLpState[18];
     vqf_double_t motionBiasEstBiasLpState[4];
+    vqf_real_t motionBiasEstLastRLp[9];
+    vqf_real_t motionBiasEstLastBiasLp[2];
     vqf_real_t restLastSquaredDeviations[2];
     vqf_real_t restT;
     vqf_real_t restLastGyrLp[3];
@@ -78,5 +83,10 @@ extern struct VQF_FILTER_t vqf_filter;
 void vqf_init(struct VQF_FILTER_t *f, float dt);
 void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, float ay, float az);
 void vqf_output(struct VQF_FILTER_t *f);
+bool vqf_set_sample_period(struct VQF_FILTER_t *f, float dt);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //HORIZON_VQF_FILTER_H

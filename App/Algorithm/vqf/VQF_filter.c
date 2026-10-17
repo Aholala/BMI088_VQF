@@ -10,6 +10,9 @@
 
 #define EPS FLT_EPSILON
 #define M_PIf       3.14159265358979323846f
+#define VQF_PI     3.14159265358979323846
+#define VQF_SQRT2  1.41421356237309504880
+#define RAD2DEG    57.29577951308232f
 
 struct VQF_FILTER_t vqf_filter;
 
@@ -52,13 +55,55 @@ static void vqf_quatRotate(const vqf_real_t q[4], const vqf_real_t v[3], vqf_rea
 }
 
 static void filterCoeffs(vqf_real_t tau, vqf_real_t Ts, vqf_double_t outB[], vqf_double_t outA[]) {
-    vqf_double_t fc = (M_SQRT2 / (2.0*M_PIf))/(vqf_double_t)(tau);
-    vqf_double_t C = tanf(M_PIf*fc*(vqf_double_t)(Ts));
-    vqf_double_t D = C*C + M_SQRT2*C + 1;
+    if (tau < Ts/2.0f) {
+        outB[0] = 1.0; outB[1] = outB[2] = 0.0;
+        outA[0] = outA[1] = 0.0;
+        return;
+    }
+    vqf_double_t fc = (VQF_SQRT2 / (2.0*VQF_PI))/(vqf_double_t)(tau);
+    vqf_double_t C = tan(VQF_PI*fc*(vqf_double_t)(Ts));
+    vqf_double_t D = C*C + VQF_SQRT2*C + 1;
     vqf_double_t b0 = C*C/D;
     outB[0] = b0; outB[1] = 2*b0; outB[2] = b0;
     outA[0] = 2*(C*C-1)/D;
-    outA[1] = (1-M_SQRT2*C+C*C)/D;
+    outA[1] = (1-VQF_SQRT2*C+C*C)/D;
+}
+
+static void filterAdapt(const vqf_real_t last[], size_t n, const vqf_double_t oldB[3],
+                        const vqf_double_t oldA[2], const vqf_double_t newB[3],
+                        const vqf_double_t newA[2], vqf_double_t state[]) {
+    if (isnan(state[0])) return;
+    for (size_t i = 0; i < n; ++i) {
+        state[2*i] += (oldB[0] - newB[0])*last[i];
+        state[2*i+1] += (oldB[1] - newB[1] - oldA[0] + newA[0])*last[i];
+    }
+}
+
+bool vqf_set_sample_period(struct VQF_FILTER_t *f, float dt) {
+    if (f == NULL || !isfinite(dt) || dt <= 0.0f || dt > 0.02f) return false;
+    if (dt == f->gyrTs && dt == f->accTs) return true;
+    vqf_double_t b[3], a[2];
+    filterCoeffs(f->tauAcc, dt, b, a);
+    filterAdapt(f->lastAccLp, 3, f->accLpB, f->accLpA, b, a, f->accLpState);
+    filterAdapt(f->motionBiasEstLastRLp, 9, f->accLpB, f->accLpA, b, a, f->motionBiasEstRLpState);
+    filterAdapt(f->motionBiasEstLastBiasLp, 2, f->accLpB, f->accLpA, b, a, f->motionBiasEstBiasLpState);
+    memcpy(f->accLpB, b, sizeof(b));
+    memcpy(f->accLpA, a, sizeof(a));
+    filterCoeffs(f->restFilterTau, dt, b, a);
+    filterAdapt(f->restLastGyrLp, 3, f->restGyrLpB, f->restGyrLpA, b, a, f->restGyrLpState);
+    filterAdapt(f->restLastAccLp, 3, f->restAccLpB, f->restAccLpA, b, a, f->restAccLpState);
+    memcpy(f->restGyrLpB, b, sizeof(b));
+    memcpy(f->restGyrLpA, a, sizeof(a));
+    memcpy(f->restAccLpB, b, sizeof(b));
+    memcpy(f->restAccLpA, a, sizeof(a));
+    f->gyrTs = f->accTs = dt;
+    f->biasV = vqf_square(0.1f*100.0f)*dt/f->biasForgettingTime;
+    vqf_real_t pMotion = vqf_square(f->biasSigmaMotion*100.0f);
+    f->biasMotionW = vqf_square(pMotion)/f->biasV + pMotion;
+    f->biasVerticalW = f->biasMotionW/vqf_max(f->biasVerticalForgettingFactor, 1e-10f);
+    vqf_real_t pRest = vqf_square(f->biasSigmaRest*100.0f);
+    f->biasRestW = vqf_square(pRest)/f->biasV + pRest;
+    return true;
 }
 
 static void filterInitialState(vqf_real_t x0, const vqf_double_t b[3], const vqf_double_t a[2], vqf_double_t out[]) {
@@ -80,12 +125,12 @@ static void filterVec(const vqf_real_t x[], size_t N, vqf_real_t tau, vqf_real_t
             state[1] = 0;
             for(size_t i = 0; i < N; i++) state[2+i] = 0;
         }
-        state[1]++;
+        state[1] += Ts;
         for (size_t i = 0; i < N; i++) {
-            state[2+i] += x[i];
+            state[2+i] += x[i]*Ts;
             out[i] = state[2+i]/state[1];
         }
-        if (state[1]*Ts >= tau) {
+        if (state[1] >= tau) {
             for(size_t i = 0; i < N; i++) filterInitialState(out[i], b, a, state+2*i);
         }
         return;
@@ -140,6 +185,9 @@ static bool matrix3Inv(const vqf_real_t in[9], vqf_real_t out[9]) {
 
 void vqf_init(struct VQF_FILTER_t *f, float dt)
 {
+    if (f == NULL) return;
+    if (!isfinite(dt) || dt <= 0.0f || dt > 0.02f) dt = 0.001f;
+    memset(f, 0, sizeof(*f));
     // 初始化参数
     f->tauAcc = 3.0f;
     f->motionBiasEstEnabled = true;
@@ -198,10 +246,13 @@ void vqf_init(struct VQF_FILTER_t *f, float dt)
 
     f->pitch = 0; f->roll = 0; f->yaw = 0;
     f->yaw_laps = 0; f->last_yaw = 0; f->YawTotalAngle = 0;
+    vqf_output(f);
 }
 
 void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, float ay, float az)
 {
+    if (f == NULL || !isfinite(gx) || !isfinite(gy) || !isfinite(gz)
+            || !isfinite(ax) || !isfinite(ay) || !isfinite(az)) return;
     vqf_real_t gyr[3] = {gx, gy, gz};
     vqf_real_t acc[3] = {ax, ay, az};
 
@@ -233,7 +284,11 @@ void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, 
     }
 
     /* ----------------- 更新加速度计 ----------------- */
-    if (acc[0] == 0.0f && acc[1] == 0.0f && acc[2] == 0.0f) return;
+    if (vqf_norm(acc, 3) < EPS) {
+        f->restDetected = false;
+        f->restT = 0.0f;
+        return;
+    }
 
     if (f->restBiasEstEnabled) {
         filterVec(acc, 3, f->restFilterTau, f->accTs, f->restAccLpB, f->restAccLpA,
@@ -255,7 +310,9 @@ void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, 
     filterVec(accEarth, 3, f->tauAcc, f->accTs, f->accLpB, f->accLpA, f->accLpState, f->lastAccLp);
 
     vqf_quatRotate(f->accQuat, f->lastAccLp, accEarth);
+    if (vqf_norm(accEarth, 3) < EPS) return;
     vqf_normalize(accEarth, 3);
+    accEarth[2] = fminf(1.0f, fmaxf(-1.0f, accEarth[2]));
 
     vqf_real_t accCorrQuat[4];
     vqf_real_t q_w = sqrtf((accEarth[2]+1)/2);
@@ -291,6 +348,8 @@ void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, 
 
         filterVec(R, 9, f->tauAcc, f->accTs, f->accLpB, f->accLpA, f->motionBiasEstRLpState, R);
         filterVec(biasLp, 2, f->tauAcc, f->accTs, f->accLpB, f->accLpA, f->motionBiasEstBiasLpState, biasLp);
+        memcpy(f->motionBiasEstLastRLp, R, sizeof(R));
+        memcpy(f->motionBiasEstLastBiasLp, biasLp, sizeof(biasLp));
 
         vqf_real_t w[3], e[3];
         if (f->restDetected && f->restBiasEstEnabled) {
@@ -316,7 +375,7 @@ void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, 
             matrix3MultiplyTpsSecond(f->biasP, R, K);
             matrix3Multiply(R, K, K);
             K[0] += w[0]; K[4] += w[1]; K[8] += w[2];
-            matrix3Inv(K, K);
+            if (!matrix3Inv(K, K)) return;
             matrix3MultiplyTpsFirst(R, K, K);
             matrix3Multiply(f->biasP, K, K);
 
@@ -335,7 +394,9 @@ void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, 
 
 void vqf_output(struct VQF_FILTER_t *f)
 {
+    if (f == NULL) return;
     vqf_quatMultiply(f->accQuat, f->gyrQuat, f->q);
+    vqf_normalize(f->q, 4);
 
     float q0 = f->q[0], q1 = f->q[1], q2 = f->q[2], q3 = f->q[3];
 
@@ -345,6 +406,16 @@ void vqf_output(struct VQF_FILTER_t *f)
     f->pitch = asinf(sinp) * RAD2DEG;
     f->roll = atan2f(2.0f * (q0 * q1 + q2 * q3), 1.0f - 2.0f * (q1 * q1 + q2 * q2)) * RAD2DEG;
     f->yaw = atan2f(2.0f * (q1 * q2 + q0 * q3), 1.0f - 2.0f * (q2 * q2 + q3 * q3)) * RAD2DEG;
+
+    f->rMat[0][0] = 1.0f - 2.0f*(q2*q2 + q3*q3);
+    f->rMat[0][1] = 2.0f*(q1*q2 - q0*q3);
+    f->rMat[0][2] = 2.0f*(q1*q3 + q0*q2);
+    f->rMat[1][0] = 2.0f*(q1*q2 + q0*q3);
+    f->rMat[1][1] = 1.0f - 2.0f*(q1*q1 + q3*q3);
+    f->rMat[1][2] = 2.0f*(q2*q3 - q0*q1);
+    f->rMat[2][0] = 2.0f*(q1*q3 - q0*q2);
+    f->rMat[2][1] = 2.0f*(q2*q3 + q0*q1);
+    f->rMat[2][2] = 1.0f - 2.0f*(q1*q1 + q2*q2);
 
     float yaw_diff = f->yaw - f->last_yaw;
     if (yaw_diff > 180.0f) {

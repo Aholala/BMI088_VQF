@@ -96,7 +96,22 @@ USER_ADD_DIR(${CMAKE_SOURCE_DIR}/ACE_ECF_27/Module/imu)
 # ==============================
 # user custom start
 
-# USER_ADD_DIR(${CMAKE_SOURCE_DIR}/Usercode/Task)
+# Project-local BMI088/VQF implementation; ECF files remain unchanged.
+USER_ADD_DIR(${CMAKE_SOURCE_DIR}/App/Algorithm/vqf)
+USER_ADD_DIR(${CMAKE_SOURCE_DIR}/App/Module/imu)
+target_include_directories(${CMAKE_PROJECT_NAME} BEFORE PRIVATE
+        ${CMAKE_SOURCE_DIR}/App/Module/imu)
+USER_ADD_DIR(${CMAKE_SOURCE_DIR}/ACE_ECF_27/Algorithm/PID)
+USER_ADD_DIR(${CMAKE_SOURCE_DIR}/ACE_ECF_27/Algorithm/filter_alg)
+USER_ADD_DIR(${CMAKE_SOURCE_DIR}/ACE_ECF_27/Algorithm/user_maths/cpp_files)
+get_target_property(_project_sources ${CMAKE_PROJECT_NAME} SOURCES)
+list(REMOVE_ITEM _project_sources
+        "${CMAKE_SOURCE_DIR}/ACE_ECF_27/Module/imu/BMI088driver.cpp"
+        "${CMAKE_SOURCE_DIR}/ACE_ECF_27/Module/imu/imu_task.cpp"
+        "${CMAKE_SOURCE_DIR}/ACE_ECF_27/Algorithm/quaternion_kalman/quaternion_EKF.cpp")
+set_property(TARGET ${CMAKE_PROJECT_NAME} PROPERTY SOURCES "${_project_sources}")
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/ACE_ECF_27/Algorithm/user_maths)
 
 # user custom end
 
