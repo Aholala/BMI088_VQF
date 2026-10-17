@@ -24,7 +24,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Add color diagnostics
 set(CMAKE_COLOR_DIAGNOSTICS ON)
 
-# Include toolchain file
 include("cmake/gcc-arm-none-eabi.cmake") # avoid CubeMX delete it
 
 # Core project settings

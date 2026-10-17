@@ -48,9 +48,7 @@
 
 /* USER CODE END Variables */
 osThreadId defaultTaskHandle;
-osThreadId gimbalTaskHandle;
 osThreadId imuTaskHandle;
-osThreadId boardComm_TaskHandle;
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -58,9 +56,7 @@ osThreadId boardComm_TaskHandle;
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void const * argument);
-void Gimbal_Task(void const * argument);
 void IMU_Task(void const * argument);
-void BoardComm_Task(void const * argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -111,17 +107,9 @@ void MX_FREERTOS_Init(void) {
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 512);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of gimbalTask */
-  osThreadDef(gimbalTask, Gimbal_Task, osPriorityNormal, 0, 2048);
-  gimbalTaskHandle = osThreadCreate(osThread(gimbalTask), NULL);
-
   /* definition and creation of imuTask */
-  osThreadDef(imuTask, IMU_Task, osPriorityIdle, 0, 512);
+  osThreadDef(imuTask, IMU_Task, osPriorityHigh, 0, 512);
   imuTaskHandle = osThreadCreate(osThread(imuTask), NULL);
-
-  /* definition and creation of boardComm_Task */
-  osThreadDef(boardComm_Task, BoardComm_Task, osPriorityNormal, 0, 512);
-  boardComm_TaskHandle = osThreadCreate(osThread(boardComm_Task), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -147,24 +135,6 @@ void StartDefaultTask(void const * argument)
   /* USER CODE END StartDefaultTask */
 }
 
-/* USER CODE BEGIN Header_Gimbal_Task */
-/**
-* @brief Function implementing the gimbalTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_Gimbal_Task */
-__weak void Gimbal_Task(void const * argument)
-{
-  /* USER CODE BEGIN Gimbal_Task */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END Gimbal_Task */
-}
-
 /* USER CODE BEGIN Header_IMU_Task */
 /**
 * @brief Function implementing the imuTask thread.
@@ -181,24 +151,6 @@ __weak void IMU_Task(void const * argument)
     osDelay(1);
   }
   /* USER CODE END IMU_Task */
-}
-
-/* USER CODE BEGIN Header_BoardComm_Task */
-/**
-* @brief Function implementing the boardComm_Task thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_BoardComm_Task */
-__weak void BoardComm_Task(void const * argument)
-{
-  /* USER CODE BEGIN BoardComm_Task */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END BoardComm_Task */
 }
 
 /* Private application code --------------------------------------------------*/
