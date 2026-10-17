@@ -39,9 +39,15 @@
 *.app
 
 # Build directories
-build/
-Build/
+# Keep HEX, MAP and ELF artifacts in build/ (Debug, Release, etc.).
+# Re-include directories so Git can reach artifacts in subdirectories.
+/[bB]uild/**
+!/[bB]uild/**/
+!/[bB]uild/**/*.hex
+!/[bB]uild/**/*.map
+!/[bB]uild/**/*.elf
 build-*/
+cmake-build-*/
 
 # CMake generated files
 CMakeFiles/

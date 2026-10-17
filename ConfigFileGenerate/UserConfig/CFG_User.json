@@ -1,0 +1,17 @@
+{
+  "enabled_modules": [
+    "USE_ALG",
+    "USE_DWT",
+    "USE_IMU",
+    "USE_PWM",
+    "USE_SPI"
+  ],
+  "custom_paths": [],
+  "define_overrides": {
+    "BMI088_SPI": "&hspi4",
+    "IMU_HEATER_TIM": "&htim3",
+    "IMU_HEATER_TIM_CHANNEL": "TIM_CHANNEL_1"
+  },
+  "excluded_defines": [],
+  "project_name": "Project"
+}
